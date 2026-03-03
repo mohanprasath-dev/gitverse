@@ -1,0 +1,149 @@
+// This is your Prisma schema file for GitVerse
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// User Model (GitHub OAuth User)
+// ==========================================
+model User {
+  id              String    @id @default(cuid())
+  login           String    @unique
+  name            String?
+  email           String?   @unique
+  emailVerified   DateTime?
+  image           String?
+  avatarUrl       String?
+  bio             String?
+  githubId      Int       @unique
+  accessToken   String?
+  followers     Int       @default(0)
+  following     Int       @default(0)
+  publicRepos   Int       @default(0)
+  joinedAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  galaxyConfigs GalaxyConfig[]
+  aiInsights    AIInsight[]
+  accounts      Account[]
+  sessions      Session[]
+
+  @@index([login])
+  @@index([githubId])
+}
+
+// ==========================================
+// NextAuth.js Models
+// ==========================================
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ==========================================
+// Galaxy Configuration
+// ==========================================
+model GalaxyConfig {
+  id          String   @id @default(cuid())
+  userId      String
+  configJson  Json     // Full GalaxyConfig JSON blob
+  generatedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositories RepositoryNode[]
+
+  @@index([userId])
+}
+
+// ==========================================
+// Repository Node (Planet)
+// ==========================================
+model RepositoryNode {
+  id              String  @id @default(cuid())
+  galaxyConfigId  String
+  name            String
+  description     String?
+  stargazerCount  Int     @default(0)
+  forkCount       Int     @default(0)
+  diskUsage       Int     @default(0)
+  primaryLanguage String?
+  languagesJson   Json    @default("[]") // Array of {name, percentage}
+  recentCommits   Int     @default(0)
+  openIssues      Int     @default(0)
+  closedIssues    Int     @default(0)
+  openPRs         Int     @default(0)
+  closedPRs       Int     @default(0)
+  isArchived      Boolean @default(false)
+  isFork          Boolean @default(false)
+  updatedAt       DateTime
+
+  galaxyConfig GalaxyConfig @relation(fields: [galaxyConfigId], references: [id], onDelete: Cascade)
+
+  @@index([galaxyConfigId])
+  @@index([name])
+}
+
+// ==========================================
+// AI Insight
+// ==========================================
+model AIInsight {
+  id                String   @id @default(cuid())
+  userId            String
+  archetype         String   // Developer archetype classification
+  reasoning         String   @db.Text
+  colorHex          String   @db.VarChar(7)
+  cosmicDescription String   @db.Text
+  velocityScore     Float    @default(0)
+  depthScore        Float    @default(0)
+  maintenanceScore  Float    @default(0)
+  diversityScore    Float    @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

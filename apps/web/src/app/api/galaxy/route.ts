@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { prisma } from '@gitverse/database';
 import { fetchGitHubUser, fetchGitHubRepos } from '@/lib/github/fetcher';
@@ -58,7 +59,10 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ success: true, data: galaxyConfig, cached: false });
+    const responseData = NextResponse.json({ success: true, data: galaxyConfig, cached: false });
+    // CDN cache for 5 minutes to reduce redundant API calls
+    responseData.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
+    return responseData;
   } catch (error) {
     console.error('Galaxy API error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';

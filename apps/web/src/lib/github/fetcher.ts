@@ -3,6 +3,42 @@ import type { GitHubUser, RepositoryNode, WeeklyContribution } from '@gitverse/t
 const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
 
 // ==========================================
+// Retry + Exponential Backoff
+// ==========================================
+
+const MAX_RETRIES = 3;
+const INITIAL_DELAY_MS = 1000;
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promise<T> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Don't retry on auth errors
+      if (lastError.message.includes('401') || lastError.message.includes('403')) {
+        throw lastError;
+      }
+
+      if (attempt < retries - 1) {
+        const delay = INITIAL_DELAY_MS * Math.pow(2, attempt);
+        console.warn(`GitHub API attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
+        await sleep(delay);
+      }
+    }
+  }
+
+  throw lastError ?? new Error('All retries exhausted');
+}
+
+// ==========================================
 // GraphQL Queries
 // ==========================================
 
@@ -31,6 +67,10 @@ query GetUserProfile($login: String!) {
         }
       }
     }
+  }
+  rateLimit {
+    remaining
+    resetAt
   }
 }
 `;
@@ -79,6 +119,10 @@ query GetUserRepos($login: String!, $first: Int!, $after: String) {
       }
     }
   }
+  rateLimit {
+    remaining
+    resetAt
+  }
 }
 `;
 
@@ -86,8 +130,13 @@ query GetUserRepos($login: String!, $first: Int!, $after: String) {
 // GitHub GraphQL Client
 // ==========================================
 
+interface RateLimitInfo {
+  remaining: number;
+  resetAt: string;
+}
+
 interface GraphQLResponse<T> {
-  data: T;
+  data: T & { rateLimit?: RateLimitInfo };
   errors?: Array<{ message: string }>;
 }
 
@@ -95,7 +144,7 @@ async function githubGraphQL<T>(
   query: string,
   variables: Record<string, unknown>,
   token: string,
-): Promise<T> {
+): Promise<T & { rateLimit?: RateLimitInfo }> {
   const response = await fetch(GITHUB_GRAPHQL_URL, {
     method: 'POST',
     headers: {
@@ -104,6 +153,22 @@ async function githubGraphQL<T>(
     },
     body: JSON.stringify({ query, variables }),
   });
+
+  // Handle rate limiting from HTTP headers
+  const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
+  if (rateLimitRemaining && parseInt(rateLimitRemaining, 10) < 10) {
+    const resetTime = response.headers.get('x-ratelimit-reset');
+    const resetMs = resetTime ? parseInt(resetTime, 10) * 1000 - Date.now() : 60000;
+    console.warn(`GitHub rate limit low (${rateLimitRemaining} remaining). Reset in ${Math.ceil(resetMs / 1000)}s`);
+
+    if (parseInt(rateLimitRemaining, 10) < 3) {
+      await sleep(Math.min(resetMs, 5000)); // Wait up to 5s if very close to limit
+    }
+  }
+
+  if (response.status === 429) {
+    throw new Error('GitHub API rate limit exceeded (429)');
+  }
 
   if (!response.ok) {
     const text = await response.text();
@@ -120,7 +185,7 @@ async function githubGraphQL<T>(
 }
 
 // ==========================================
-// Data Fetchers
+// Data Fetchers (with retry)
 // ==========================================
 
 interface UserProfileResponse {
@@ -151,40 +216,42 @@ interface UserProfileResponse {
 }
 
 export async function fetchGitHubUser(login: string, token: string): Promise<GitHubUser> {
-  const data = await githubGraphQL<UserProfileResponse>(
-    USER_PROFILE_QUERY,
-    { login },
-    token,
-  );
+  return withRetry(async () => {
+    const data = await githubGraphQL<UserProfileResponse>(
+      USER_PROFILE_QUERY,
+      { login },
+      token,
+    );
 
-  const u = data.user;
-  const cc = u.contributionsCollection;
+    const u = data.user;
+    const cc = u.contributionsCollection;
 
-  // Calculate contribution streak
-  const allDays = cc.contributionCalendar.weeks.flatMap((w) => w.contributionDays);
-  let streak = 0;
-  for (let i = allDays.length - 1; i >= 0; i--) {
-    if (allDays[i]!.contributionCount > 0) {
-      streak++;
-    } else {
-      break;
+    // Calculate contribution streak
+    const allDays = cc.contributionCalendar.weeks.flatMap((w) => w.contributionDays);
+    let streak = 0;
+    for (let i = allDays.length - 1; i >= 0; i--) {
+      if (allDays[i]!.contributionCount > 0) {
+        streak++;
+      } else {
+        break;
+      }
     }
-  }
 
-  return {
-    login: u.login,
-    name: u.name,
-    avatarUrl: u.avatarUrl,
-    bio: u.bio,
-    followers: u.followers.totalCount,
-    following: u.following.totalCount,
-    publicRepos: u.repositories.totalCount,
-    totalCommitContributions: cc.totalCommitContributions,
-    totalPRContributions: cc.totalPullRequestContributions,
-    totalIssueContributions: cc.totalIssueContributions,
-    contributionStreak: streak,
-    joinedAt: u.createdAt,
-  };
+    return {
+      login: u.login,
+      name: u.name,
+      avatarUrl: u.avatarUrl,
+      bio: u.bio,
+      followers: u.followers.totalCount,
+      following: u.following.totalCount,
+      publicRepos: u.repositories.totalCount,
+      totalCommitContributions: cc.totalCommitContributions,
+      totalPRContributions: cc.totalPullRequestContributions,
+      totalIssueContributions: cc.totalIssueContributions,
+      contributionStreak: streak,
+      joinedAt: u.createdAt,
+    };
+  });
 }
 
 interface ReposResponse {
@@ -227,10 +294,13 @@ export async function fetchGitHubRepos(
 
   while (allRepos.length < maxRepos) {
     const batchSize = Math.min(30, maxRepos - allRepos.length);
-    const data: ReposResponse = await githubGraphQL<ReposResponse>(
-      USER_REPOS_QUERY,
-      { login, first: batchSize, after },
-      token,
+
+    const data = await withRetry(() =>
+      githubGraphQL<ReposResponse>(
+        USER_REPOS_QUERY,
+        { login, first: batchSize, after },
+        token,
+      ),
     );
 
     const repos: ReposResponse['user']['repositories'] = data.user.repositories;
@@ -276,24 +346,26 @@ export async function fetchContributionWeeks(
   login: string,
   token: string,
 ): Promise<WeeklyContribution[]> {
-  const data = await githubGraphQL<UserProfileResponse>(
-    USER_PROFILE_QUERY,
-    { login },
-    token,
-  );
-
-  const weeks = data.user.contributionsCollection.contributionCalendar.weeks;
-
-  return weeks.map((week) => {
-    const totalCommits = week.contributionDays.reduce(
-      (sum, day) => sum + day.contributionCount,
-      0,
+  return withRetry(async () => {
+    const data = await githubGraphQL<UserProfileResponse>(
+      USER_PROFILE_QUERY,
+      { login },
+      token,
     );
-    return {
-      week: week.contributionDays[0]?.date ?? '',
-      commits: totalCommits,
-      additions: 0, // GraphQL v4 doesn't expose per-week addition/deletion counts
-      deletions: 0,
-    };
+
+    const weeks = data.user.contributionsCollection.contributionCalendar.weeks;
+
+    return weeks.map((week) => {
+      const totalCommits = week.contributionDays.reduce(
+        (sum, day) => sum + day.contributionCount,
+        0,
+      );
+      return {
+        week: week.contributionDays[0]?.date ?? '',
+        commits: totalCommits,
+        additions: 0,
+        deletions: 0,
+      };
+    });
   });
 }

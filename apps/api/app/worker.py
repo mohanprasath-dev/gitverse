@@ -5,9 +5,11 @@ Celery worker configuration for async galaxy generation tasks.
 import os
 
 from celery import Celery
-from dotenv import load_dotenv
-
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 

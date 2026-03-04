@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { GalaxyCanvas } from '@/components/three/GalaxyCanvas';
 import { GalaxyHUD } from '@/components/galaxy/GalaxyHUD';
 import { RepoDetailModal } from '@/components/galaxy/RepoDetailModal';
-import { CosmicLoader } from '@gitverse/ui';
+import { CosmicLoader, CosmicButton } from '@gitverse/ui';
 import { useGalaxyStore } from '@/stores/galaxy-store';
 import { buildStarSystem } from '@/lib/github/mapper';
 import type { GalaxyConfig, StarSystemConfig } from '@gitverse/types';
@@ -196,6 +197,14 @@ export default function ExplorePage() {
       </div>
 
       <GalaxyCanvas starSystem={starSystem} />
+
+      {/* Navigation */}
+      <div className="fixed left-4 bottom-4 z-20">
+        <Link href="/">
+          <CosmicButton variant="ghost">← Home</CosmicButton>
+        </Link>
+      </div>
+
       <GalaxyHUD />
       <RepoDetailModal />
     </div>

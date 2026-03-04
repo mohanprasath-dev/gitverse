@@ -9,6 +9,8 @@ import { StarSystem } from './StarSystem';
 import { SolarPlanets } from './SolarPlanets';
 import { AsteroidBelt } from './AsteroidBelt';
 import { ConstellationLines } from './ConstellationLines';
+import { Nebula } from './Nebula';
+import { CosmicDust } from './CosmicDust';
 import { useGalaxyStore } from '@/stores/galaxy-store';
 import type { StarSystemConfig } from '@gitverse/types';
 
@@ -90,6 +92,13 @@ export function GalaxyScene({ starSystem }: GalaxySceneProps) {
           />
         )}
       </group>
+
+      {/* Nebulae — ambient cosmic clouds */}
+      <Nebula position={[-40, 10, -50]} color="#7c3aed" scale={20} opacity={0.12} />
+      <Nebula position={[50, -15, -40]} color="#2563eb" scale={15} opacity={0.1} />
+
+      {/* Ambient cosmic dust particles */}
+      <CosmicDust count={400} radius={120} />
     </>
   );
 }

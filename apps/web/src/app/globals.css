@@ -40,10 +40,67 @@
   .glass-panel {
     @apply rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl;
   }
+
+  /* Cosmic glow effect for interactive elements */
+  .cosmic-glow {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.15),
+                0 0 60px rgba(99, 102, 241, 0.05);
+    transition: box-shadow 0.3s ease;
+  }
+
+  .cosmic-glow:hover {
+    box-shadow: 0 0 30px rgba(99, 102, 241, 0.25),
+                0 0 80px rgba(99, 102, 241, 0.1);
+  }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+}
+
+/* Custom range slider styling for time controls */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #6366f1;
+  margin-top: -5px;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+  transition: transform 0.15s ease;
+}
+
+input[type='range']::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #6366f1;
+  border: none;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
 }

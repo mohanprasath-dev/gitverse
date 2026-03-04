@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { Navbar } from '@/components/Navbar';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export const metadata: Metadata = {
   title: 'GitVerse — Your GitHub Galaxy',
@@ -26,7 +28,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen bg-nebula-gradient">
         <div id="app-root" className="relative min-h-screen">
-          {children}
+          <ErrorBoundary>
+            <Navbar />
+            {children}
+          </ErrorBoundary>
         </div>
       </body>
     </html>

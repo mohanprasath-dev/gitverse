@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { GalaxyCanvas } from '@/components/three/GalaxyCanvas';
 import { GalaxyHUD } from '@/components/galaxy/GalaxyHUD';
 import { RepoDetailModal } from '@/components/galaxy/RepoDetailModal';
-import { CosmicLoader } from '@gitverse/ui';
+import { GalaxyLoader } from '@/components/galaxy/GalaxyLoader';
+import { CosmicButton } from '@gitverse/ui';
 import { useGalaxyStore } from '@/stores/galaxy-store';
 import { buildStarSystem } from '@/lib/github/mapper';
 import type { GalaxyConfig, StarSystemConfig } from '@gitverse/types';
@@ -46,12 +48,7 @@ export function GalaxyView({ userId }: GalaxyViewProps) {
   }, [userId, setGalaxyConfig, setLoading, setError]);
 
   if (isLoading || !starSystem) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4">
-        <CosmicLoader size={64} />
-        <p className="text-sm text-white/50">Generating your galaxy...</p>
-      </div>
-    );
+    return <GalaxyLoader />;
   }
 
   if (error) {
@@ -64,12 +61,22 @@ export function GalaxyView({ userId }: GalaxyViewProps) {
         >
           Try again
         </button>
+        <Link href="/">
+          <CosmicButton variant="ghost">← Back to Home</CosmicButton>
+        </Link>
       </div>
     );
   }
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
+      {/* Back button */}
+      <div className="fixed left-4 bottom-4 z-20">
+        <Link href="/">
+          <CosmicButton variant="ghost">← Home</CosmicButton>
+        </Link>
+      </div>
+
       {/* 3D Canvas */}
       <GalaxyCanvas starSystem={starSystem} />
 

@@ -1,10 +1,13 @@
 """
 LLM Service — LangChain integration via OpenRouter for archetype
 classification and cosmic description generation.
+Includes retry with exponential backoff and structured error handling.
 """
 
+import asyncio
 import json
 import os
+from functools import lru_cache
 from typing import Any
 
 from langchain_openai import ChatOpenAI
@@ -29,6 +32,31 @@ def get_llm(temperature: float = 0.7) -> ChatOpenAI:
             "X-Title": "GitVerse AI",
         },
     )
+
+
+# ==========================================
+# Retry Logic
+# ==========================================
+
+MAX_RETRIES = 3
+INITIAL_DELAY = 1.0  # seconds
+
+
+async def with_retry(fn, retries: int = MAX_RETRIES):
+    """Execute async function with exponential backoff retry."""
+    last_error = None
+
+    for attempt in range(retries):
+        try:
+            return await fn()
+        except Exception as e:
+            last_error = e
+            if attempt < retries - 1:
+                delay = INITIAL_DELAY * (2 ** attempt)
+                print(f"⚠️ LLM call attempt {attempt + 1} failed: {e}. Retrying in {delay}s...")
+                await asyncio.sleep(delay)
+
+    raise last_error or Exception("All retries exhausted")
 
 
 # ==========================================
@@ -62,27 +90,30 @@ Respond with ONLY the JSON object."""
 
 
 async def analyze_developer_profile(profile_data: str) -> dict[str, Any]:
-    """Classify a developer into an archetype using LLM."""
-    llm = get_llm(temperature=0.3)
-    parser = JsonOutputParser()
+    """Classify a developer into an archetype using LLM with retry."""
+    async def _call():
+        llm = get_llm(temperature=0.3)
+        parser = JsonOutputParser()
 
-    messages = [
-        SystemMessage(content=ARCHETYPE_SYSTEM_PROMPT),
-        HumanMessage(content=ARCHETYPE_USER_TEMPLATE.format(profile_data=profile_data)),
-    ]
+        messages = [
+            SystemMessage(content=ARCHETYPE_SYSTEM_PROMPT),
+            HumanMessage(content=ARCHETYPE_USER_TEMPLATE.format(profile_data=profile_data)),
+        ]
 
-    try:
         response = await llm.ainvoke(messages)
         result = parser.parse(response.content if isinstance(response.content, str) else str(response.content))
-        
+
         # Validate required fields
         if not all(k in result for k in ("archetype", "reasoning", "color_hex")):
-            raise ValueError("Missing required fields in LLM response")
-        
+            raise ValueError(f"Missing required fields in LLM response. Got keys: {list(result.keys())}")
+
         return result
+
+    try:
+        return await with_retry(_call)
     except Exception as e:
-        # Fallback archetype if LLM fails
-        print(f"⚠️ LLM archetype classification failed: {e}")
+        # Fallback archetype if LLM fails after all retries
+        print(f"⚠️ LLM archetype classification failed after {MAX_RETRIES} attempts: {e}")
         return {
             "archetype": "The Rapid Builder",
             "reasoning": "Default classification — AI analysis temporarily unavailable.",
@@ -109,18 +140,21 @@ Write ONLY the description text, no quotes or formatting."""
 
 
 async def generate_cosmic_description(profile_data: str) -> str:
-    """Generate a cosmic description for a developer's galaxy."""
-    llm = get_llm(temperature=0.9)
+    """Generate a cosmic description for a developer's galaxy with retry."""
+    async def _call():
+        llm = get_llm(temperature=0.9)
 
-    messages = [
-        SystemMessage(content=COSMIC_SYSTEM_PROMPT),
-        HumanMessage(content=COSMIC_USER_TEMPLATE.format(profile_data=profile_data)),
-    ]
+        messages = [
+            SystemMessage(content=COSMIC_SYSTEM_PROMPT),
+            HumanMessage(content=COSMIC_USER_TEMPLATE.format(profile_data=profile_data)),
+        ]
 
-    try:
         response = await llm.ainvoke(messages)
         desc = response.content if isinstance(response.content, str) else str(response.content)
         return desc.strip().strip('"')
+
+    try:
+        return await with_retry(_call)
     except Exception as e:
-        print(f"⚠️ LLM cosmic description failed: {e}")
+        print(f"⚠️ LLM cosmic description failed after {MAX_RETRIES} attempts: {e}")
         return "A mysterious galaxy pulses in the void, its secrets yet to be revealed by the cosmic algorithms."

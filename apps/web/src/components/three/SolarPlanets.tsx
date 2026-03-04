@@ -6,6 +6,10 @@ import { Billboard, Text, Trail } from '@react-three/drei';
 import * as THREE from 'three';
 import type { CelestialBody } from '@gitverse/types';
 import { useGalaxyStore } from '@/stores/galaxy-store';
+import { PlanetRings } from './PlanetRings';
+
+// Reusable Vector3 to avoid GC pressure in useFrame
+const _targetScale = new THREE.Vector3();
 
 // ==========================================
 // Orbital Math (Kepler-inspired)
@@ -77,13 +81,10 @@ function Planet({ planet, index }: PlanetProps) {
       meshRef.current.rotation.y += 0.005 * timeScale;
     }
 
-    // Hover scale
+    // Hover scale (reuses pre-allocated Vector3)
     if (meshRef.current) {
-      const targetScale = isHovered ? 1.1 : 1.0;
-      meshRef.current.scale.lerp(
-        new THREE.Vector3(targetScale, targetScale, targetScale),
-        0.1,
-      );
+      const s = isHovered ? 1.1 : 1.0;
+      meshRef.current.scale.lerp(_targetScale.set(s, s, s), 0.1);
     }
   });
 
@@ -133,6 +134,16 @@ function Planet({ planet, index }: PlanetProps) {
           opacity={0.15}
         />
       </mesh>
+
+      {/* Rings for high-star repos */}
+      {(planet.metadata?.stars as number) > 100 && (
+        <PlanetRings
+          innerRadius={planet.radius * 1.4}
+          outerRadius={planet.radius * 2.2}
+          color={planet.color}
+          opacity={0.2}
+        />
+      )}
 
       {/* Planet name */}
       <Billboard follow lockX={false} lockY={false} lockZ={false}>
